@@ -1,24 +1,23 @@
 <#
 .SYNOPSIS
     Wrapper grafico (GUI) per l'unione di file PDF tramite il modulo 'PSWritePDF'.
-    Compatibile con Windows PowerShell 5.1 e PowerShell 7.
+    Compatibile sia con Windows PowerShell 5.1 che con PowerShell 7.
 
 .DESCRIPTION
-    Lo script automatizza in ordine sequenziale:
-    1. Verifica e aggiornamento di PowerShell tramite WinGet (se inferiore alla versione 7).
-    2. Controllo e installazione automatica e silenziosa del modulo 'PSWritePDF' (con forzatura TLS 1.2/1.3).
-    3. Creazione di un'interfaccia grafica (GUI Windows.Forms) con:
-       - Elenco file PDF selezionati (con supporto Drag & Drop).
-       - Pulsanti "Aggiungi PDF", "Muovi Su", "Muovi Giù", "Rimuovi" e "Svuota Tutto".
-       - Selezione del file di output tramite campo di testo e dialogo "Salva come...".
-       - Grande pulsante "Unisci PDF".
-    4. Esecuzione dell'unione con il cmdlet 'Merge-PDF' e visualizzazione di messaggi grafici di esito.
+    Esegue in ordine sequenziale:
+    1. Controllo versione PowerShell e aggiornamento tramite WinGet (se < 7).
+    2. Controllo e installazione del modulo 'PSWritePDF' con forzatura TLS 1.2/1.3.
+    3. Creazione interfaccia grafica Windows.Forms (ListBox, Riordino, Salva come).
+    4. Esecuzione del comando 'Merge-PDF' e notifica grafica dell'esito.
 #>
 
 [CmdletBinding()]
-param()
+param(
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$FileIniziali
+)
 
-# Imposta la codifica della console su UTF-8 per la corretta visualizzazione di caratteri speciali e accenti
+# Codifica console UTF-8 per la corretta gestione di accenti e caratteri speciali
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 # =============================================================================
@@ -32,14 +31,55 @@ $versioneCorrente = $PSVersionTable.PSVersion
 Write-Host "Versione PowerShell rilevata: $versioneCorrente" -ForegroundColor Gray
 
 if ($versioneCorrente.Major -lt 7) {
-    Write-Warning "La versione in uso ($versioneCorrente) è inferiore a PowerShell 7."
-    Write-Host "Avvio dell'installazione automatica o aggiornamento a PowerShell 7 tramite WinGet..." -ForegroundColor Yellow
+    Write-Warning "La sessione corrente ($versioneCorrente) è in esecuzione con Windows PowerShell."
     
-    # Verifica la presenza di winget nel sistema
+    # 1. Verifica se PowerShell 7 (pwsh.exe) è già installato nel sistema
+    $pwshPath = $null
+    $pwshCmd = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+    if ($pwshCmd) {
+        $pwshPath = $pwshCmd.Source
+    }
+    else {
+        $candidati = @(
+            "$env:LOCALAPPDATA\Microsoft\WindowsApps\pwsh.exe",
+            "$env:ProgramFiles\PowerShell\7\pwsh.exe",
+            "$env:LOCALAPPDATA\Microsoft\PowerShell\7\pwsh.exe",
+            "${env:ProgramFiles(x86)}\PowerShell\7\pwsh.exe"
+        )
+        foreach ($c in $candidati) {
+            if (Test-Path -LiteralPath $c) {
+                $pwshPath = $c
+                break
+            }
+        }
+    }
+
+    # Se PowerShell 7 è già presente, effettua il passaggio immediato a PowerShell 7 evitando il loop
+    if ($pwshPath) {
+        Write-Host "PowerShell 7 è già installato nel sistema ($pwshPath)." -ForegroundColor Green
+        Write-Host "Rilancio automatico con PowerShell 7..." -ForegroundColor Cyan
+
+        $targetScript = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Definition }
+        if ($targetScript) {
+            $argList = @("-STA", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$targetScript`"")
+            if ($FileIniziali) {
+                foreach ($f in $FileIniziali) {
+                    $argList += "`"$f`""
+                }
+            }
+            Start-Process -FilePath $pwshPath -ArgumentList $argList
+            return
+        }
+    }
+
+    # Se PowerShell 7 NON è installato, procedi con l'installazione tramite WinGet
+    Write-Host "Avvio dell'installazione automatica a PowerShell 7 tramite WinGet..." -ForegroundColor Yellow
+    
+    # Verifica presenza di winget
     $wingetCmd = Get-Command winget.exe -ErrorAction SilentlyContinue
     if ($wingetCmd) {
         try {
-            # Comando richiesto per l'installazione/aggiornamento silenzioso
+            # Comando per l'installazione/aggiornamento silenzioso
             winget install Microsoft.PowerShell --silent --accept-source-agreements --accept-package-agreements
         }
         catch {
@@ -47,22 +87,21 @@ if ($versioneCorrente.Major -lt 7) {
         }
     }
     else {
-        Write-Warning "WinGet non è stato trovato nel sistema. Scaricare PowerShell 7 manualmente dallo Store Microsoft o da GitHub."
+        Write-Warning "WinGet non è disponibile nel sistema. Installare PowerShell 7 dallo Store o da GitHub."
     }
 
-    # Messaggio di avviso per l'utente (a video e tramite finestra grafica)
-    $msgRiavvio = "È stata avviata l'installazione/aggiornamento a PowerShell 7.`n`nPer proseguire, è necessario chiudere questa finestra e riavviare lo script utilizzando la nuova versione di PowerShell (sfondo nero / pwsh)."
+    # Messaggio informativo per l'utente (a video e tramite popup grafico)
+    $msgRiavvio = "È stata avviata l'installazione o l'aggiornamento a PowerShell 7.`n`nAl termine, riavvia l'applicazione (userà automaticamente PowerShell 7)."
     
     Write-Host ""
     Write-Host "************************************************************************" -ForegroundColor Yellow
-    Write-Host " ATTENZIONE: È NECESSARIO RIAVVIARE LO SCRIPT CON POWERSHELL 7" -ForegroundColor Yellow
+    Write-Host " ATTENZIONE: RIAVVIO RICHIESTO CON POWERSHELL 7" -ForegroundColor Yellow
     Write-Host " 1. Attendi il completamento dell'installazione di PowerShell 7." -ForegroundColor White
     Write-Host " 2. Chiudi questa finestra di Windows PowerShell (sfondo blu)." -ForegroundColor White
-    Write-Host " 3. Riavvia lo script usando PowerShell 7 (sfondo nero / icona 'pwsh')." -ForegroundColor White
+    Write-Host " 3. Riavvia l'applicazione." -ForegroundColor White
     Write-Host "************************************************************************" -ForegroundColor Yellow
     Write-Host ""
 
-    # Notifica popup grafica
     Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
     [System.Windows.Forms.MessageBox]::Show(
         $msgRiavvio,
@@ -77,7 +116,7 @@ if ($versioneCorrente.Major -lt 7) {
 
 Write-Host "Versione di PowerShell idonea (PowerShell 7+)." -ForegroundColor Green
 
-# Assicura l'esecuzione in modalità STA (Single Threaded Apartment), richiesta da Windows Forms per finestre di dialogo e Drag & Drop
+# Assicura l'esecuzione in modalità STA (Single Threaded Apartment), richiesta da Windows Forms
 if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne [System.Threading.ApartmentState]::STA) {
     if ($PSCommandPath) {
         $pwshProcess = (Get-Process -Id $PID).Path
@@ -99,19 +138,18 @@ $moduloNome = "PSWritePDF"
 $moduloInstallato = Get-Module -ListAvailable -Name $moduloNome
 
 if (-not $moduloInstallato) {
-    Write-Host "Il modulo '$moduloNome' non è presente nel sistema." -ForegroundColor Yellow
-    Write-Host "Configurazione protocolli di sicurezza e installazione silenziosa in corso..." -ForegroundColor Yellow
+    Write-Host "Modulo '$moduloNome' non trovato. Configurazione protocolli di sicurezza e installazione..." -ForegroundColor Yellow
 
     # Forza l'abilitazione del protocollo TLS 1.2 e TLS 1.3 per evitare blocchi di rete
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
     }
     catch {
-        # Fallback nel caso in cui Tls13 non sia disponibile nel runtime sottostante
+        # Fallback a TLS 1.2 se TLS 1.3 non dovesse essere definito nel runtime sottostante
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     }
 
-    # Assicura la presenza del package provider NuGet (necessario su alcune installazioni pulite)
+    # Verifica package provider NuGet (necessario su ambienti puliti)
     if (-not (Get-PackageProvider -ListAvailable -Name NuGet -ErrorAction SilentlyContinue)) {
         try {
             Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
@@ -119,10 +157,10 @@ if (-not $moduloInstallato) {
         catch { }
     }
 
-    # Installazione del modulo in modo silenzioso per l'utente corrente
+    # Installazione silenziosa per l'utente corrente
     try {
         Install-Module -Name $moduloNome -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
-        Write-Host "Modulo '$moduloNome' installato correttamente per l'utente corrente!" -ForegroundColor Green
+        Write-Host "Modulo '$moduloNome' installato correttamente!" -ForegroundColor Green
     }
     catch {
         Write-Error "Errore durante l'installazione del modulo '$moduloNome': $($_.Exception.Message)"
@@ -137,10 +175,10 @@ if (-not $moduloInstallato) {
     }
 }
 else {
-    Write-Host "Il modulo '$moduloNome' è già installato nel sistema." -ForegroundColor Green
+    Write-Host "Modulo '$moduloNome' già presente nel sistema." -ForegroundColor Green
 }
 
-# Importazione del modulo nella sessione corrente
+# Importazione del modulo
 try {
     Import-Module -Name $moduloNome -ErrorAction Stop
     Write-Host "Modulo '$moduloNome' importato con successo." -ForegroundColor Green
@@ -161,12 +199,11 @@ catch {
 # =============================================================================
 # 3. INTERFACCIA GRAFICA (GUI MINIMALE)
 # =============================================================================
-# Caricamento delle librerie grafiche Windows Forms e Drawing
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-# Creazione della Finestra Principale (Form)
+# Finestra Principale (Form)
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "PDF Merger - Unione Documenti PDF"
 $form.Size = New-Object System.Drawing.Size(740, 580)
@@ -177,7 +214,7 @@ $form.MaximizeBox = $false
 $form.BackColor = [System.Drawing.Color]::FromArgb(248, 249, 250)
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
-# ----------------- INTESTAZIONE (HEADER) -----------------
+# Intestazione
 $lblTitolo = New-Object System.Windows.Forms.Label
 $lblTitolo.Text = "Unione File PDF"
 $lblTitolo.Font = New-Object System.Drawing.Font("Segoe UI", 13, [System.Drawing.FontStyle]::Bold)
@@ -187,13 +224,13 @@ $lblTitolo.Size = New-Object System.Drawing.Size(500, 26)
 $form.Controls.Add($lblTitolo)
 
 $lblDescrizione = New-Object System.Windows.Forms.Label
-$lblDescrizione.Text = "Aggiungi i PDF da unire e usa 'Muovi Su' / 'Muovi Giù' per definirne la sequenza esatta."
+$lblDescrizione.Text = "Aggiungi i PDF da unire e usa 'Muovi Su' / 'Muovi Giù' per stabilirne la sequenza."
 $lblDescrizione.ForeColor = [System.Drawing.Color]::FromArgb(108, 117, 125)
 $lblDescrizione.Location = New-Object System.Drawing.Point(20, 42)
 $lblDescrizione.Size = New-Object System.Drawing.Size(680, 20)
 $form.Controls.Add($lblDescrizione)
 
-# ----------------- LISTBOX (ELENCO DEI FILE) -----------------
+# ListBox con elenco file PDF
 $listBoxPDF = New-Object System.Windows.Forms.ListBox
 $listBoxPDF.Location = New-Object System.Drawing.Point(20, 70)
 $listBoxPDF.Size = New-Object System.Drawing.Size(540, 250)
@@ -203,7 +240,7 @@ $listBoxPDF.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 $listBoxPDF.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 $form.Controls.Add($listBoxPDF)
 
-# Supporto Drag & Drop per trascinare file PDF direttamente da Esplora Risorse
+# Supporto Drag & Drop diretto da Esplora Risorse
 $listBoxPDF.Add_DragEnter({
     param($sender, $e)
     if ($e.Data.GetDataPresent([System.Windows.Forms.DataFormats]::FileDrop)) {
@@ -225,7 +262,21 @@ $listBoxPDF.Add_DragDrop({
     }
 })
 
-# ----------------- PULSANTI DI CONTROLLO LISTBOX (A DESTRA) -----------------
+# Caricamento iniziale se sono stati passati argomenti o trascinati file sull'eseguibile
+if ($FileIniziali) {
+    foreach ($fileArg in $FileIniziali) {
+        if ([System.IO.Path]::GetExtension($fileArg) -like ".pdf" -and (Test-Path -LiteralPath $fileArg -PathType Leaf)) {
+            if (-not $listBoxPDF.Items.Contains($fileArg)) {
+                $listBoxPDF.Items.Add($fileArg) | Out-Null
+            }
+        }
+    }
+    if ($listBoxPDF.Items.Count -gt 0) {
+        $listBoxPDF.SelectedIndex = 0
+    }
+}
+
+# Pulsanti di gestione elenco (colonna laterale destra)
 $btnWidth = 140
 $btnHeight = 36
 $btnX = 575
@@ -267,7 +318,7 @@ $btnRimuovi.UseVisualStyleBackColor = $true
 $btnRimuovi.Cursor = [System.Windows.Forms.Cursors]::Hand
 $form.Controls.Add($btnRimuovi)
 
-# Pulsante: Svuota Tutto (funzione di supporto rapido)
+# Pulsante: Svuota Tutto
 $btnSvuota = New-Object System.Windows.Forms.Button
 $btnSvuota.Text = "🗑️ Svuota Tutto"
 $btnSvuota.Location = New-Object System.Drawing.Point($btnX, 250)
@@ -276,7 +327,7 @@ $btnSvuota.UseVisualStyleBackColor = $true
 $btnSvuota.Cursor = [System.Windows.Forms.Cursors]::Hand
 $form.Controls.Add($btnSvuota)
 
-# ----------------- SEZIONE FILE DI DESTINAZIONE (OUTPUT) -----------------
+# Sezione File di destinazione (Output)
 $lblOutput = New-Object System.Windows.Forms.Label
 $lblOutput.Text = "File PDF di destinazione (Output):"
 $lblOutput.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
@@ -299,7 +350,7 @@ $btnSalvaCome.UseVisualStyleBackColor = $true
 $btnSalvaCome.Cursor = [System.Windows.Forms.Cursors]::Hand
 $form.Controls.Add($btnSalvaCome)
 
-# ----------------- GRANDE PULSANTE "UNISCI PDF" IN BASSO -----------------
+# Grande pulsante "Unisci PDF"
 $btnUnisci = New-Object System.Windows.Forms.Button
 $btnUnisci.Text = "⚡ UNISCI PDF"
 $btnUnisci.Location = New-Object System.Drawing.Point(20, 420)
@@ -313,9 +364,9 @@ $btnUnisci.Cursor = [System.Windows.Forms.Cursors]::Hand
 $form.Controls.Add($btnUnisci)
 
 
-# ----------------- GESTIONE EVENTI (LOGICA INTERFACCIA) -----------------
+# ----------------- EVENTI DELLA GUI -----------------
 
-# Evento: Click su "Aggiungi PDF"
+# Click: Aggiungi PDF
 $btnAggiungi.Add_Click({
     $openDialog = New-Object System.Windows.Forms.OpenFileDialog
     $openDialog.Title = "Seleziona i file PDF da unire"
@@ -334,7 +385,7 @@ $btnAggiungi.Add_Click({
     }
 })
 
-# Evento: Click su "Muovi Su"
+# Click: Muovi Su
 $btnMuoviSu.Add_Click({
     $index = $listBoxPDF.SelectedIndex
     if ($index -gt 0) {
@@ -345,7 +396,7 @@ $btnMuoviSu.Add_Click({
     }
 })
 
-# Evento: Click su "Muovi Giù"
+# Click: Muovi Giù
 $btnMuoviGiu.Add_Click({
     $index = $listBoxPDF.SelectedIndex
     if ($index -ge 0 -and $index -lt ($listBoxPDF.Items.Count - 1)) {
@@ -356,7 +407,7 @@ $btnMuoviGiu.Add_Click({
     }
 })
 
-# Evento: Click su "Rimuovi"
+# Click: Rimuovi
 $btnRimuovi.Add_Click({
     $index = $listBoxPDF.SelectedIndex
     if ($index -ge 0) {
@@ -368,14 +419,14 @@ $btnRimuovi.Add_Click({
     }
 })
 
-# Evento: Click su "Svuota Tutto"
+# Click: Svuota Tutto
 $btnSvuota.Add_Click({
     if ($listBoxPDF.Items.Count -gt 0) {
         $listBoxPDF.Items.Clear()
     }
 })
 
-# Evento: Click su "Salva come..."
+# Click: Salva come...
 $btnSalvaCome.Add_Click({
     $saveDialog = New-Object System.Windows.Forms.SaveFileDialog
     $saveDialog.Title = "Seleziona percorso e nome del file di output"
@@ -403,7 +454,7 @@ $btnSalvaCome.Add_Click({
 # 4. ESECUZIONE DELL'UNIONE (CLICK SU "UNISCI PDF")
 # =============================================================================
 $btnUnisci.Add_Click({
-    # Validazione 1: Verifica che ci siano almeno 2 file PDF nella ListBox
+    # Validazione: presenza di almeno 2 file
     if ($listBoxPDF.Items.Count -lt 2) {
         [System.Windows.Forms.MessageBox]::Show(
             $form,
@@ -415,7 +466,7 @@ $btnUnisci.Add_Click({
         return
     }
 
-    # Validazione 2: Verifica che sia stato indicato un percorso di output
+    # Validazione: percorso di output indicato
     $PercorsoOutput = $txtOutput.Text.Trim()
     if ([string]::IsNullOrWhiteSpace($PercorsoOutput)) {
         [System.Windows.Forms.MessageBox]::Show(
@@ -428,13 +479,13 @@ $btnUnisci.Add_Click({
         return
     }
 
-    # Assicura l'estensione .pdf sul file di destinazione
+    # Assicura estensione .pdf
     if (-not $PercorsoOutput.EndsWith(".pdf", [System.StringComparison]::OrdinalIgnoreCase)) {
         $PercorsoOutput += ".pdf"
         $txtOutput.Text = $PercorsoOutput
     }
 
-    # Verifica e creazione automatica della cartella di destinazione se inesistente
+    # Crea la directory di destinazione se inesistente
     $cartellaDestinazione = Split-Path -Path $PercorsoOutput -Parent
     if ($cartellaDestinazione -and -not (Test-Path -LiteralPath $cartellaDestinazione)) {
         try {
@@ -455,7 +506,7 @@ $btnUnisci.Add_Click({
     # Raccogli i file nell'ordine esatto stabilito dall'utente nella ListBox
     $ElencoFile = @($listBoxPDF.Items)
 
-    # Verifica che tutti i file selezionati siano effettivamente presenti su disco
+    # Verifica esistenza fisica dei file prima dell'unione
     $fileMancanti = @()
     foreach ($file in $ElencoFile) {
         if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
@@ -474,7 +525,7 @@ $btnUnisci.Add_Click({
         return
     }
 
-    # Feedback visivo: disabilita pulsante e imposta cursore di attesa
+    # Feedback visivo
     $btnUnisci.Enabled = $false
     $btnUnisci.Text = "⏳ Unione in corso... Attendere..."
     $form.Cursor = [System.Windows.Forms.Cursors]::WaitCursor
@@ -484,7 +535,7 @@ $btnUnisci.Add_Click({
         # Esecuzione del comando di unione del modulo PSWritePDF
         Merge-PDF -InputFile $ElencoFile -OutputFile $PercorsoOutput -ErrorAction Stop
 
-        # Mostra messaggio grafico di successo
+        # Messaggio grafico di successo
         $risposta = [System.Windows.Forms.MessageBox]::Show(
             $form,
             "PDF uniti con successo!`n`nFile generato in:`n$PercorsoOutput`n`nVuoi aprire la cartella del file generato?",
@@ -493,13 +544,12 @@ $btnUnisci.Add_Click({
             [System.Windows.Forms.MessageBoxIcon]::Information
         )
 
-        # Apertura della cartella con selezione del file generato
         if ($risposta -eq [System.Windows.Forms.DialogResult]::Yes) {
             Start-Process explorer.exe -ArgumentList "/select,`"$PercorsoOutput`""
         }
     }
     catch {
-        # Mostra messaggio grafico di errore in caso di problemi
+        # Messaggio grafico di errore
         [System.Windows.Forms.MessageBox]::Show(
             $form,
             "Si è verificato un errore durante l'unione dei file PDF:`n`n$($_.Exception.Message)",
@@ -509,16 +559,25 @@ $btnUnisci.Add_Click({
         ) | Out-Null
     }
     finally {
-        # Ripristino dello stato originale del pulsante e del cursore
         $btnUnisci.Enabled = $true
         $btnUnisci.Text = "⚡ UNISCI PDF"
         $form.Cursor = [System.Windows.Forms.Cursors]::Default
     }
 })
 
-# Visualizzazione della Finestra Grafica
-$form.Add_Shown({ $form.Activate() })
+# Visualizzazione della Finestra Grafica (e occultamento della console di sfondo)
+$form.Add_Shown({
+    $form.Activate()
+    try {
+        $consoleDef = '[DllImport("Kernel32.dll")] public static extern IntPtr GetConsoleWindow(); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);'
+        $winType = Add-Type -MemberDefinition $consoleDef -Name "ConsoleWindowMgr" -Namespace "Win32Utils" -PassThru -ErrorAction SilentlyContinue
+        $hWnd = [Win32Utils.ConsoleWindowMgr]::GetConsoleWindow()
+        if ($hWnd -ne [IntPtr]::Zero) {
+            [Win32Utils.ConsoleWindowMgr]::ShowWindow($hWnd, 0) | Out-Null
+        }
+    } catch { }
+})
 [void]$form.ShowDialog()
 
-# Rilascio delle risorse grafiche alla chiusura
+# Rilascio risorse
 $form.Dispose()
