@@ -19,10 +19,10 @@ Per la massima comodità, sono disponibili diverse modalità d'uso:
 
 | File | Tipo | Descrizione |
 | :--- | :---: | :--- |
-| [`PDFMerger.exe`](./PDFMerger.exe) | **Eseguibile (.exe)** | **Consigliato**. Singolo file autonomo eseguibile con doppio clic. Non richiede finestre PowerShell aperte e supporta il trascinamento di file PDF direttamente sull'icona. |
-| [`PDFMerger.bat`](./PDFMerger.bat) | **Script Ibrido (.bat)** | Singolo file script batch/PowerShell unificato. Doppio clic immediato, non richiede compilazione ed è ispezionabile con qualsiasi editor di testo. |
-| [`Merge-PDF-GUI.ps1`](./Merge-PDF-GUI.ps1) | **Script PowerShell (.ps1)** | Il codice sorgente PowerShell puro, eseguibile da terminale o tramite menu contestuale. |
-| [`Build-Exe.ps1`](./Build-Exe.ps1) | **Strumento di Build** | Script che ricompila `PDFMerger.exe` a partire da `Merge-PDF-GUI.ps1` usando il compilatore .NET nativo di Windows. |
+| [`PDFMerger.exe`](./PDFMerger.exe) | **Eseguibile (.exe)** | **Consigliato**. Singolo file autonomo eseguibile con doppio clic. Nessuna dipendenza esterna richiesta. |
+| [`PDFMerger.bat`](./PDFMerger.bat) | **Script Ibrido (.bat)** | Singolo file script batch/PowerShell unificato. Doppio clic immediato. |
+| [`Merge-PDF-GUI.ps1`](./Merge-PDF-GUI.ps1) | **Script PowerShell (.ps1)** | Il codice sorgente PowerShell puro, eseguibile da terminale o tramite doppio clic. |
+| [`Build-Exe.ps1`](./Build-Exe.ps1) | **Strumento di Build** | Script che ricompila `PDFMerger.exe` a partire da `Merge-PDF-GUI.ps1` in un eseguibile standalone. |
 
 ---
 
